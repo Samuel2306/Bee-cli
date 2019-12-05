@@ -3,10 +3,14 @@
 const axios = require('axios');
 const ora = require('ora');
 const Inquirer = require('Inquirer')
+const path = require('path')
 
 const { promisify } = require('util'); // node内置的将异步的api可以快速转化成promise形式的方法
 let downLoadGit = require('download-git-repo');  // 拉取git仓库的模块
 downLoadGit = promisify(downLoadGit); // 如果不做这个处理就会报错
+
+let ncp = require('ncp');
+ncp = promisify(ncp);
 
 // 获取仓库列表
 const fetchRepoList = async () => {
@@ -33,6 +37,8 @@ const download = async (repo, tag) => {
   return dest; // 返回下载目录
 };
 
+
+
 const wrapFetchAddLoding = (fn, message) => async (...args) => {
   const spinner = ora(message);
   spinner.start(); // 开始loading
@@ -45,7 +51,7 @@ module.exports = async (projectName) => {
   // ora模块应该是实现node.js 命令行环境的 loading效果， 和显示各种状态的图标等
   let repos = await wrapFetchAddLoding(fetchRepoList,'fetching repo list')()
   // 选择模版
-  repos = repos.filter((item) => item.name == 'vuex-snapshot');
+  // repos = repos.filter((item) => item.name == 'vuex-snapshot');
   repos = repos.map((item) => item.name);
   // 询问工具
   const { repo } = await Inquirer.prompt({
@@ -71,5 +77,8 @@ module.exports = async (projectName) => {
 
   // 下载项目
   const target = await wrapFetchAddLoding(download, 'download template')(repo, tag);
+
+  // 将下载的文件拷贝到当前执行命令的目录下
+  await ncp(target, path.join(path.resolve(), projectName));
 }
 
