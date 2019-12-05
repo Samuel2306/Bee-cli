@@ -5,7 +5,8 @@ const ora = require('ora');
 const Inquirer = require('Inquirer')
 
 const { promisify } = require('util'); // node内置的将异步的api可以快速转化成promise形式的方法
-const downLoadGit = require('download-git-repo');  // 拉取git仓库的模块
+let downLoadGit = require('download-git-repo');  // 拉取git仓库的模块
+downLoadGit = promisify(downLoadGit); // 如果不做这个处理就会报错
 
 // 获取仓库列表
 const fetchRepoList = async () => {
@@ -20,11 +21,22 @@ const fetchTagList = async (repo) => {
   return data;
 };
 
+// 定义下载模版的保存地址
+const downloadDirectory = `${process.env[process.platform === 'darwin' ? 'HOME' : 'USERPROFILE']}/.bee_template`;
+const download = async (repo, tag) => {
+  let api = `Samuel2306/${repo}`; // 下载项目
+  if (tag) {
+    api += `#${tag}`;
+  }
+  const dest = `${downloadDirectory}/${repo}`; // 将模板下载到对应的目录中
+  await downLoadGit(api, dest);
+  return dest; // 返回下载目录
+};
+
 const wrapFetchAddLoding = (fn, message) => async (...args) => {
   const spinner = ora(message);
   spinner.start(); // 开始loading
   const r = await fn(...args);
-  console.log(r)
   spinner.succeed(); // 结束loading
   return r;
 }
@@ -33,6 +45,7 @@ module.exports = async (projectName) => {
   // ora模块应该是实现node.js 命令行环境的 loading效果， 和显示各种状态的图标等
   let repos = await wrapFetchAddLoding(fetchRepoList,'fetching repo list')()
   // 选择模版
+  repos = repos.filter((item) => item.name == 'vuex-snapshot');
   repos = repos.map((item) => item.name);
   // 询问工具
   const { repo } = await Inquirer.prompt({
@@ -55,5 +68,8 @@ module.exports = async (projectName) => {
     choices: tags,
   });
   // console.log(tag)
+
+  // 下载项目
+  const target = await wrapFetchAddLoding(download, 'download template')(repo, tag);
 }
 
