@@ -1,4 +1,5 @@
 #! /usr/bin/env node
+// 第一句是指定运行环境为node, 必须指定，不然就会报错
 const program = require('commander')
 const path = require('path')
 
