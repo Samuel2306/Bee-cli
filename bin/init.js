@@ -4,10 +4,16 @@ const axios = require('axios');
 const ora = require('ora');
 const Inquirer = require('Inquirer')
 const path = require('path')
+const fs = require('fs')
 
 const { promisify } = require('util'); // node内置的将异步的api可以快速转化成promise形式的方法
 let downLoadGit = require('download-git-repo');  // 拉取git仓库的模块
 downLoadGit = promisify(downLoadGit); // 如果不做这个处理就会报错
+
+
+const MetalSmith = require('metalsmith'); // 遍历文件夹
+let { render } = require('consolidate').ejs;
+render = promisify(render); // 包装渲染方法
 
 let ncp = require('ncp');
 ncp = promisify(ncp);
@@ -78,7 +84,46 @@ module.exports = async (projectName) => {
   // 下载项目
   const target = await wrapFetchAddLoding(download, 'download template')(repo, tag);
 
-  // 将下载的文件拷贝到当前执行命令的目录下
-  await ncp(target, path.join(path.resolve(), projectName));
+  // 有的时候用户可以定制下载模板中的内容，拿package.json文件为例，用户可以根据提示给项目命名、设置描述等
+  // 我们采用ejs模版引擎，核心原理就是将下载的模板文件，依次遍历根据用户填写的信息渲染模板，将渲染好的结果拷贝到执行命令的目录下
+  // path.join(path1，path2，path3.......): 将路径片段使用特定的分隔符连接起来形成路径
+  if (!fs.existsSync(path.join(target, 'ask.js'))) {  // 没有ask文件说明不需要编译
+    // 将下载的文件拷贝到当前执行命令的目录下
+    await ncp(target, path.join(path.resolve(), projectName));
+  }else {
+    await new Promise((resovle, reject) => {
+      MetalSmith(__dirname)
+        .source(target) // 遍历下载的目录
+        .destination(path.join(path.resolve(), projectName)) // 输出渲染后的结果
+        .use(async (files, metal, done) => {
+          // 弹框询问用户
+          const result = await Inquirer.prompt(require(path.join(target, 'ask.js')));
+          const data = metal.metadata();
+          Object.assign(data, result); // 将询问的结果放到metadata中保证在下一个中间件中可以获取到
+          delete files['ask.js'];
+          done();
+        })
+        .use((files, metal, done) => {
+          Reflect.ownKeys(files).forEach(async (file) => {
+            let content = files[file].contents.toString(); // 获取文件中的内容
+            if (file.includes('.js') || file.includes('.json')) { // 如果是js或者json才有可能是模板
+              if (content.includes('<%')) { // 文件中用<% 我才需要编译
+                content = await render(content, metal.metadata()); // 用数据渲染模板
+                files[file].contents = Buffer.from(content); // 渲染好的结果替换即可
+              }
+            }
+          });
+          done();
+        })
+        .build((err) => { // 执行中间件
+          if (!err) {
+            resovle();
+          } else {
+            reject();
+          }
+        });
+    })
+  }
+
 }
 
